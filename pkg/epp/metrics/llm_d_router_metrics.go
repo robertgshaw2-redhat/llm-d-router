@@ -391,10 +391,11 @@ var (
 				"Pool saturation signal gating Flow Control dispatch. 1.0 is the gating set point; values above 1.0 "+
 					"indicate the magnitude of oversubscription past it. An empty pool reads as 1.0. With the default "+
 					"utilization detector, endpoints with missing or stale metrics score as fully saturated "+
-					"(fail-closed; see flow_control_stale_endpoints).",
+					"(fail-closed; see flow_control_stale_endpoints). The stage label partitions saturation by "+
+					"disaggregation role (prefill, decode, interleaved); global is the max-gate value driving dispatch.",
 				compbasemetrics.ALPHA),
 		},
-		[]string{"inference_pool"},
+		[]string{"inference_pool", "stage"},
 	)
 
 	llmdFlowControlStaleEndpoints = prometheus.NewGaugeVec(

@@ -32,7 +32,9 @@ import (
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	"github.com/llm-d/llm-d-router/pkg/epp/flowcontrol/contracts"
 	"github.com/llm-d/llm-d-router/pkg/epp/flowcontrol/types"
+	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/flowcontrol"
+	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/bylabel"
 	"github.com/llm-d/llm-d-router/pkg/epp/metrics"
 )
 
@@ -390,10 +392,7 @@ func (p *Processor) dispatchCycle(ctx context.Context) bool {
 
 	pool := p.endpointCandidates.Locate(ctx, nil)
 	p.poolEmpty = len(pool) == 0
-	saturation := p.saturationDetector.Saturation(ctx, pool)
-
-	// Record pool saturation metric
-	metrics.RecordFlowControlPoolSaturation(p.poolName, saturation)
+	saturation := p.poolSaturation(ctx, pool)
 
 	priorities := p.registry.AllOrderedPriorityLevels()
 	ceilings := p.ceilingsBuffer(len(priorities))
@@ -440,6 +439,77 @@ func (p *Processor) dispatchCycle(ctx context.Context) bool {
 		return true
 	}
 	return false
+}
+
+// Disaggregation stage labels for the flow_control_pool_saturation metric. global carries the
+// max-gate value that actually drives dispatch.
+const (
+	stagePrefill     = "prefill"
+	stageDecode      = "decode"
+	stageInterleaved = "interleaved"
+	stageGlobal      = "global"
+)
+
+// poolSaturation computes the backpressure signal for a candidate pool. In disaggregated Prefill/
+// Decode deployments a bottleneck can be confined to one tier while the aggregate looks healthy, so
+// the pool is partitioned by role and each tier is evaluated independently. Dispatch gates on the
+// maximum saturation across active (non-empty) tiers, so a single overloaded stage applies
+// backpressure to the whole pool. Empty partitions read as fully saturated under the default
+// detector and are excluded from the max; otherwise a partitioned pool would be permanently gated by
+// tiers that simply hold no endpoints. A wholly empty pool falls back to the detector's empty-pool
+// signal, preserving monolithic behavior.
+func (p *Processor) poolSaturation(ctx context.Context, pool []fwkdl.Endpoint) float64 {
+	if len(pool) == 0 {
+		saturation := p.saturationDetector.Saturation(ctx, pool)
+		metrics.RecordFlowControlPoolSaturation(p.poolName, stageGlobal, saturation)
+		return saturation
+	}
+
+	prefill, decode, interleaved := partitionEndpoints(pool)
+	// Saturation is non-negative and a non-empty pool always yields at least one active tier, so 0.0
+	// is a safe floor for the max across tiers.
+	saturation := 0.0
+	evaluate := func(stage string, endpoints []fwkdl.Endpoint) {
+		if len(endpoints) == 0 {
+			return
+		}
+		stageSat := p.saturationDetector.Saturation(ctx, endpoints)
+		metrics.RecordFlowControlPoolSaturation(p.poolName, stage, stageSat)
+		saturation = max(saturation, stageSat)
+	}
+	evaluate(stagePrefill, prefill)
+	evaluate(stageDecode, decode)
+	evaluate(stageInterleaved, interleaved)
+
+	metrics.RecordFlowControlPoolSaturation(p.poolName, stageGlobal, saturation)
+	return saturation
+}
+
+// partitionEndpoints groups candidate endpoints by disaggregation role, read from the llm-d.ai/role
+// label. Prefill and decode workers form independent tiers; workers that serve multiple stages, or
+// carry no Labels map, are interleaved. Endpoints that carry labels but no role default to decode so
+// monolithic pools keep gating as a single decode tier.
+func partitionEndpoints(endpoints []fwkdl.Endpoint) (prefill, decode, interleaved []fwkdl.Endpoint) {
+	for _, ep := range endpoints {
+		meta := ep.GetMetadata()
+		if meta == nil || meta.Labels == nil {
+			interleaved = append(interleaved, ep)
+			continue
+		}
+		switch meta.Labels[bylabel.RoleLabel] {
+		case bylabel.RolePrefill, bylabel.RoleEncodePrefill:
+			prefill = append(prefill, ep)
+		case bylabel.RoleDecode:
+			decode = append(decode, ep)
+		case bylabel.RolePrefillDecode, bylabel.RoleBoth, bylabel.RoleEncodePrefillDecode:
+			interleaved = append(interleaved, ep)
+		case "":
+			decode = append(decode, ep)
+		default:
+			interleaved = append(interleaved, ep)
+		}
+	}
+	return
 }
 
 // ceilingsBuffer returns the reusable ceilings buffer sized to n, every element reset to 1.0 (no

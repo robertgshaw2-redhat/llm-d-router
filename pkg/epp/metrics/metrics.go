@@ -373,10 +373,11 @@ var (
 					"dispatch. 1.0 is the gating set point; values above 1.0 indicate the magnitude of oversubscription "+
 					"past it. An empty pool reads as 1.0. With the default utilization detector, endpoints with missing "+
 					"or stale metrics score as fully saturated (fail-closed; see "+
-					"llm_d_epp_flow_control_stale_endpoints).",
+					"llm_d_epp_flow_control_stale_endpoints). The stage label partitions saturation by disaggregation "+
+					"role (prefill, decode, interleaved); global is the max-gate value driving dispatch.",
 				compbasemetrics.ALPHA),
 		},
-		[]string{"inference_pool"},
+		[]string{"inference_pool", "stage"},
 	)
 )
 
@@ -942,10 +943,12 @@ func SubFlowControlQueueBytes(fairnessID, priority, inferencePool, modelName, ta
 	llmdFlowControlQueueBytes.WithLabelValues(fairnessID, priority, inferencePool, modelName, targetModelName).Sub(float64(bytes))
 }
 
-// RecordFlowControlPoolSaturation records the current saturation level for an inference pool.
-func RecordFlowControlPoolSaturation(inferencePool string, saturation float64) {
-	flowControlPoolSaturation.WithLabelValues(inferencePool).Set(saturation)
-	llmdFlowControlPoolSaturation.WithLabelValues(inferencePool).Set(saturation)
+// RecordFlowControlPoolSaturation records the current saturation level for an inference pool. The
+// stage identifies the disaggregation tier the value belongs to (prefill, decode, interleaved, or
+// global for the max-gate value driving dispatch).
+func RecordFlowControlPoolSaturation(inferencePool, stage string, saturation float64) {
+	flowControlPoolSaturation.WithLabelValues(inferencePool, stage).Set(saturation)
+	llmdFlowControlPoolSaturation.WithLabelValues(inferencePool, stage).Set(saturation)
 }
 
 // RecordFlowControlStaleEndpoints records how many candidate endpoints the given saturation

@@ -259,15 +259,20 @@ Exposed when the `flowControl` feature gate is enabled.
 #### `flow_control_pool_saturation`
 
 *   **Type:** Gauge
-*   **Labels:** `inference_pool`
+*   **Labels:** `inference_pool`, `stage`
 *   **Description:** Pool saturation signal gating dispatch. 1.0 is the gating set point; values
     above 1.0 indicate the magnitude of oversubscription past it (deliberately not clamped). An
     empty pool reads as 1.0, and with the default utilization detector, endpoints with missing or
-    stale metrics score as fully saturated (fail-closed).
-*   **Usage:** When saturation reaches the usage limit threshold, the dispatch cycle skips
-    dispatching and requests remain queued. A reading pinned at exactly 1.0 can be fail-closed
-    stale-metrics or an empty pool rather than genuine overload (which typically reads above 1.0);
-    check `flow_control_stale_endpoints` to disambiguate.
+    stale metrics score as fully saturated (fail-closed). In disaggregated Prefill/Decode
+    deployments the candidate pool is partitioned by the `llm-d.ai/role` label and each tier is
+    evaluated independently: the `stage` label is `prefill`, `decode`, or `interleaved` for a tier,
+    and `global` for the max across active tiers that actually gates dispatch. Monolithic pools
+    report a single `decode` tier alongside `global`.
+*   **Usage:** When the `global` saturation reaches the usage limit threshold, the dispatch cycle
+    skips dispatching and requests remain queued. Per-stage series localize a bottleneck to the
+    prefill or decode tier when the aggregate looks healthy. A reading pinned at exactly 1.0 can be
+    fail-closed stale-metrics or an empty pool rather than genuine overload (which typically reads
+    above 1.0); check `flow_control_stale_endpoints` to disambiguate.
 
 #### `flow_control_stale_endpoints`
 
