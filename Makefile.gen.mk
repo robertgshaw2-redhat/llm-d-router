@@ -74,6 +74,11 @@ generate-proto: protoc-gen-go protoc-gen-go-grpc ## Generate Golang code from pr
 		--go_out=module=github.com/llm-d/llm-d-router:. \
 		--go-grpc_out=module=github.com/llm-d/llm-d-router:. \
 		pkg/epp/framework/plugins/requesthandling/parsers/vllmgrpc/api/proto/*.proto
+	PATH="$(LOCALBIN):$$PATH" $(PROTOC) \
+		-I pkg/cacheledger/api/proto \
+		--go_out=module=github.com/llm-d/llm-d-router:. \
+		--go-grpc_out=module=github.com/llm-d/llm-d-router:. \
+		pkg/cacheledger/api/proto/*.proto
 
 .PHONY: protoc-gen-go
 protoc-gen-go: $(PROTOC_GEN_GO) ## Download protoc-gen-go locally if necessary.

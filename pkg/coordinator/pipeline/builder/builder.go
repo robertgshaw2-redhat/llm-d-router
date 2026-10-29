@@ -34,11 +34,19 @@ import (
 // touches them (queued bodies are stored verbatim, and passthrough stamping
 // must precede routing), so it is only valid in first position. The tokens-in
 // format (use_openai_format=false) sends token IDs that only the render step
-// produces, so it requires a render step in the pipeline.
+// produces, so it requires a render step in the pipeline. The cache-ledger
+// step hashes those token IDs, so it must follow a render step.
 func validatePipeline(p config.PipelineConfig) error {
+	rendered := false
 	for i, s := range p.Steps {
 		if s.Type == asyncbroker.StepName && i > 0 {
 			return fmt.Errorf("the %q step must be the first pipeline step, found it at position %d", asyncbroker.StepName, i+1)
+		}
+		if s.Type == steps.CacheLedgerStepName && !rendered {
+			return fmt.Errorf("the %q step must follow a %q step", steps.CacheLedgerStepName, steps.RenderStepName)
+		}
+		if s.Type == steps.RenderStepName {
+			rendered = true
 		}
 	}
 	if p.UseOpenAIFormat {

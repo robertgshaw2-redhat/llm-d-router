@@ -398,6 +398,31 @@ pipeline:
         # max_total_placeholder_tokens: 4096
 
     # -------------------------------------------------------------------
+    # cache-ledger: optional, and when enabled it must follow render.
+    # Bills prompt-cache hits on retention instead of on what an engine
+    # happened to keep: the step hashes the rendered prompt in full blocks
+    # and asks the cache ledger (cmd/cache-ledger) how many leading blocks
+    # the tenant sent within the TTL. That count, in tokens, replaces
+    # cached_tokens in the usage block the client receives. The tenant is
+    # read from the x-llm-d-tenant header, which the gateway must set
+    # after authentication. Requests without it, and requests the ledger
+    # fails to answer within timeout, report the engine's count.
+    # Uncomment to enable.
+    # -------------------------------------------------------------------
+    # - type: cache-ledger
+    #   params:
+    #     # address is the ledger's gRPC host:port. Required.
+    #     address: "cache-ledger:9500"
+    #     # block_size is the billing granularity in tokens; a trailing
+    #     # partial block is never billed as cached. Default 16.
+    #     # block_size: 16
+    #     # ttl is the retention promised to tenants. Omitted uses the
+    #     # ledger's --default-ttl; the ledger caps it at --max-ttl.
+    #     # ttl: 1h
+    #     # timeout bounds the ledger call. Default 100ms.
+    #     # timeout: 100ms
+
+    # -------------------------------------------------------------------
     # conditional-decode: optional shortcut for text-only chats. When
     # the request has no multimodal entries, the coordinator probes the
     # decode worker first. If the worker has the prompt cached, it

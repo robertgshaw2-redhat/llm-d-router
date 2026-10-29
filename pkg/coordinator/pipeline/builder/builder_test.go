@@ -31,6 +31,7 @@ func TestValidatePipeline(t *testing.T) {
 	render := config.StepConfig{Type: steps.RenderStepName}
 	decode := config.StepConfig{Type: steps.DecodeStepName}
 	broker := config.StepConfig{Type: asyncbroker.StepName}
+	ledger := config.StepConfig{Type: steps.CacheLedgerStepName}
 
 	tests := []struct {
 		name    string
@@ -56,6 +57,21 @@ func TestValidatePipeline(t *testing.T) {
 			name:    "async-broker first is accepted",
 			cfg:     config.PipelineConfig{UseOpenAIFormat: true, Steps: []config.StepConfig{broker, decode}},
 			wantErr: false,
+		},
+		{
+			name:    "cache-ledger after render is accepted",
+			cfg:     config.PipelineConfig{UseOpenAIFormat: true, Steps: []config.StepConfig{render, ledger, decode}},
+			wantErr: false,
+		},
+		{
+			name:    "cache-ledger without render is rejected",
+			cfg:     config.PipelineConfig{UseOpenAIFormat: true, Steps: []config.StepConfig{ledger, decode}},
+			wantErr: true,
+		},
+		{
+			name:    "cache-ledger before render is rejected",
+			cfg:     config.PipelineConfig{UseOpenAIFormat: true, Steps: []config.StepConfig{ledger, render, decode}},
+			wantErr: true,
 		},
 		{
 			name:    "async-broker after another step is rejected",

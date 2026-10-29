@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 	"github.com/llm-d/llm-d-router/pkg/coordinator/pipeline"
 )
 
@@ -83,7 +84,7 @@ func TestAsyncResultWaiterMultiplexesWaiters(t *testing.T) {
 func TestAsyncBrokerWaitNotifyDeliversResult(t *testing.T) {
 	step, rdb := newAsyncTestStep(t, map[string]any{"wakeup_mode": "notify"})
 	reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`, map[string]string{
-		defaultModeHeader: "wait", defaultTenantHeader: "team-a",
+		defaultModeHeader: "wait", reqcommon.TenantHeaderKey: "team-a",
 	})
 	start := time.Now()
 	done := make(chan error, 1)

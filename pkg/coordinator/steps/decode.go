@@ -88,13 +88,17 @@ func (s *DecodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 }
 
 // responseWriter returns the writer the decode response is streamed through,
-// and the function that flushes whatever it buffered. Without a prefill count
-// the client gets the decode worker's bytes untouched.
+// and the function that flushes whatever it buffered. Without a ledger or
+// prefill count the client gets the decode worker's bytes untouched.
 func (s *DecodeStep) responseWriter(reqCtx *pipeline.RequestContext) (http.ResponseWriter, func() error) {
-	if reqCtx.PrefillCachedTokens == nil {
+	cached := reqCtx.LedgerCachedTokens
+	if cached == nil {
+		cached = reqCtx.PrefillCachedTokens
+	}
+	if cached == nil {
 		return reqCtx.ResponseWriter, func() error { return nil }
 	}
-	return usage.NewCachedTokensResponseWriter(reqCtx.ResponseWriter, *reqCtx.PrefillCachedTokens, reqCtx.Stream)
+	return usage.NewCachedTokensResponseWriter(reqCtx.ResponseWriter, *cached, reqCtx.Stream)
 }
 
 // prepareDecodeBody mutates reqCtx.Body in place rather than on a clone (unlike

@@ -26,6 +26,7 @@ import (
 
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
 	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
+	"github.com/llm-d/llm-d-router/pkg/common/usage"
 
 	"github.com/llm-d/llm-d-router/pkg/coordinator/gateway"
 	coordmetrics "github.com/llm-d/llm-d-router/pkg/coordinator/metrics"
@@ -69,8 +70,13 @@ func (s *ConditionalDecodeStep) Execute(ctx context.Context, reqCtx *pipeline.Re
 		return err
 	}
 
+	writer, finalize := reqCtx.ResponseWriter, func() error { return nil }
+	if reqCtx.LedgerCachedTokens != nil {
+		writer, finalize = usage.NewCachedTokensResponseWriter(reqCtx.ResponseWriter, *reqCtx.LedgerCachedTokens, reqCtx.Stream)
+	}
+
 	var cacheMiss bool
-	out := serveDecode(logger, s.gwClient.Transport(), reqCtx.ResponseWriter, proxyReq, coordmetrics.UpstreamConditionalDecode, func(resp *http.Response) error {
+	out := serveDecode(logger, s.gwClient.Transport(), writer, proxyReq, coordmetrics.UpstreamConditionalDecode, func(resp *http.Response) error {
 		switch {
 		case resp.StatusCode == http.StatusPreconditionFailed:
 			cacheMiss = true
@@ -89,6 +95,9 @@ func (s *ConditionalDecodeStep) Execute(ctx context.Context, reqCtx *pipeline.Re
 	if cacheMiss {
 		logger.V(logutil.DEFAULT).Info("cache miss (412), continuing pipeline")
 		return nil
+	}
+	if err := finalize(); err != nil {
+		logger.Error(err, "flushing the rewritten usage block failed: client received a partial response")
 	}
 	if out.TransportErr != nil {
 		coordmetrics.IncConditionalDecodeProbes(coordmetrics.ProbeResultTransportError)

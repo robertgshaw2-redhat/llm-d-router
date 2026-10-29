@@ -37,6 +37,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 	coordmetrics "github.com/llm-d/llm-d-router/pkg/coordinator/metrics"
 	"github.com/llm-d/llm-d-router/pkg/coordinator/metrics/metricstest"
 	"github.com/llm-d/llm-d-router/pkg/coordinator/pipeline"
@@ -186,7 +187,7 @@ func TestAsyncBrokerConfigValidation(t *testing.T) {
 func TestAsyncBrokerNoModeHeaderIsNoOp(t *testing.T) {
 	step, rdb := newAsyncTestStep(t, nil)
 	reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`, map[string]string{
-		defaultTenantHeader:             "team-a",
+		reqcommon.TenantHeaderKey:       "team-a",
 		"x-llm-d-inference-fairness-id": "spoofed",
 	})
 
@@ -230,7 +231,7 @@ func TestAsyncBrokerRejections(t *testing.T) {
 		{
 			name:    "tenant with colon",
 			body:    `{"model":"test-model"}`,
-			headers: map[string]string{defaultModeHeader: "enqueue", defaultTenantHeader: "a:b"},
+			headers: map[string]string{defaultModeHeader: "enqueue", reqcommon.TenantHeaderKey: "a:b"},
 			wantMsg: "must not contain",
 		},
 	}
@@ -252,11 +253,11 @@ func TestAsyncBrokerEnqueue(t *testing.T) {
 	step, rdb := newAsyncTestStep(t, nil)
 	reqCtx, rec := asyncReqCtx(t, `{"model":"test-model","messages":[{"role":"user","content":"hi"}]}`,
 		map[string]string{
-			defaultModeHeader:     "enqueue",
-			defaultTenantHeader:   "team-a",
-			defaultTimeoutHeader:  "120",
-			"x-llm-d-slo-ttft-ms": "800",
-			"traceparent":         "00-abc-def-01",
+			defaultModeHeader:         "enqueue",
+			reqcommon.TenantHeaderKey: "team-a",
+			defaultTimeoutHeader:      "120",
+			"x-llm-d-slo-ttft-ms":     "800",
+			"traceparent":             "00-abc-def-01",
 		})
 
 	err := step.Execute(t.Context(), reqCtx)
@@ -308,7 +309,7 @@ func TestAsyncBrokerEnqueueFailure(t *testing.T) {
 	step, _ := newAsyncTestStep(t, nil)
 	require.NoError(t, step.rdb.Close())
 	reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`,
-		map[string]string{defaultModeHeader: "enqueue", defaultTenantHeader: "team-a"})
+		map[string]string{defaultModeHeader: "enqueue", reqcommon.TenantHeaderKey: "team-a"})
 
 	err := step.Execute(t.Context(), reqCtx)
 	require.Error(t, err)
@@ -326,7 +327,7 @@ func TestAsyncBrokerClientGone(t *testing.T) {
 		step, _ := newAsyncTestStep(t, nil)
 		require.NoError(t, step.rdb.Close())
 		reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`,
-			map[string]string{defaultModeHeader: "enqueue", defaultTenantHeader: "team-a"})
+			map[string]string{defaultModeHeader: "enqueue", reqcommon.TenantHeaderKey: "team-a"})
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		var logged []string
@@ -342,7 +343,7 @@ func TestAsyncBrokerClientGone(t *testing.T) {
 	t.Run("wait", func(t *testing.T) {
 		step, _ := newAsyncTestStep(t, nil)
 		reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`,
-			map[string]string{defaultModeHeader: "wait", defaultTenantHeader: "team-a"})
+			map[string]string{defaultModeHeader: "wait", reqcommon.TenantHeaderKey: "team-a"})
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		step.sub = cancelAfterSubmit{asyncSubmitter: step.sub, cancel: cancel}
@@ -388,7 +389,7 @@ func upstreamRequestCount(t *testing.T, reg *prometheus.Registry, upstream strin
 func TestAsyncBrokerWaitDeliversResult(t *testing.T) {
 	step, rdb := newAsyncTestStep(t, nil)
 	reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`,
-		map[string]string{defaultModeHeader: "wait", defaultTenantHeader: "team-a"})
+		map[string]string{defaultModeHeader: "wait", reqcommon.TenantHeaderKey: "team-a"})
 
 	// Pre-load the result so the wait loop's first check finds it.
 	res, err := json.Marshal(api.ResultMessage{StatusCode: 200, Payload: `{"object":"chat.completion"}`})
@@ -476,7 +477,7 @@ func TestAsyncBrokerWaitDeliversStoredError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			step, rdb := newAsyncTestStep(t, nil)
 			reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`,
-				map[string]string{defaultModeHeader: "wait", defaultTenantHeader: "team-a"})
+				map[string]string{defaultModeHeader: "wait", reqcommon.TenantHeaderKey: "team-a"})
 			res, err := json.Marshal(tc.res)
 			require.NoError(t, err)
 			require.NoError(t, rdb.LPush(t.Context(), resultKey("team-a", "req-test-1"), string(res)).Err())
@@ -494,7 +495,7 @@ func TestAsyncBrokerWaitDeliversStoredError(t *testing.T) {
 func TestAsyncBrokerWaitCapFallsBackToPending(t *testing.T) {
 	step, _ := newAsyncTestStep(t, map[string]any{"wait_cap_seconds": 1})
 	reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`,
-		map[string]string{defaultModeHeader: "wait", defaultTenantHeader: "team-a"})
+		map[string]string{defaultModeHeader: "wait", reqcommon.TenantHeaderKey: "team-a"})
 
 	start := time.Now()
 	err := step.Execute(t.Context(), reqCtx)
@@ -509,7 +510,7 @@ func TestAsyncBrokerWaitDeadlineAnswersTimeout(t *testing.T) {
 		"timeouts": map[string]any{"wait": map[string]any{"default_seconds": 1}},
 	})
 	reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`,
-		map[string]string{defaultModeHeader: "wait", defaultTenantHeader: "team-a"})
+		map[string]string{defaultModeHeader: "wait", reqcommon.TenantHeaderKey: "team-a"})
 
 	start := time.Now()
 	err := step.Execute(t.Context(), reqCtx)
@@ -534,9 +535,9 @@ func TestAsyncBrokerDeadlineClamping(t *testing.T) {
 		return envelope.Data.Deadline
 	}
 	headers := map[string]string{
-		defaultModeHeader:    "enqueue",
-		defaultTenantHeader:  "team-a",
-		defaultTimeoutHeader: "1000000",
+		defaultModeHeader:         "enqueue",
+		reqcommon.TenantHeaderKey: "team-a",
+		defaultTimeoutHeader:      "1000000",
 	}
 
 	t.Run("unclamped when no max configured", func(t *testing.T) {
@@ -564,8 +565,8 @@ func TestAsyncBrokerDeadlineClamping(t *testing.T) {
 			"timeouts": map[string]any{"enqueue": map[string]any{"max_seconds": 7200}},
 		})
 		reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`, map[string]string{
-			defaultModeHeader:   "enqueue",
-			defaultTenantHeader: "team-a",
+			defaultModeHeader:         "enqueue",
+			reqcommon.TenantHeaderKey: "team-a",
 		})
 		require.True(t, errors.Is(step.Execute(t.Context(), reqCtx), pipeline.ErrPipelineDone))
 		require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
@@ -592,7 +593,7 @@ func TestAsyncBrokerPassthroughStampsAndClassifies(t *testing.T) {
 	ctx1, cancel1 := context.WithCancel(t.Context())
 	reqCtx1, rec1 := asyncReqCtx(t, `{"model":"test-model"}`, map[string]string{
 		defaultModeHeader:               "passthrough",
-		defaultTenantHeader:             "limited-team",
+		reqcommon.TenantHeaderKey:       "limited-team",
 		"x-llm-d-inference-objective":   "self-assigned",
 		"x-llm-d-inference-fairness-id": "spoofed",
 	})
@@ -603,8 +604,8 @@ func TestAsyncBrokerPassthroughStampsAndClassifies(t *testing.T) {
 
 	// Second concurrent request exceeds the reserved limit of 1: overflow.
 	reqCtx2, _ := asyncReqCtx(t, `{"model":"test-model"}`, map[string]string{
-		defaultModeHeader:   "passthrough",
-		defaultTenantHeader: "limited-team",
+		defaultModeHeader:         "passthrough",
+		reqcommon.TenantHeaderKey: "limited-team",
 	})
 	require.NoError(t, step.Execute(t.Context(), reqCtx2))
 	assert.Equal(t, "interactive-overflow", reqCtx2.OriginalHeaders.Get("x-llm-d-inference-objective"))
@@ -613,8 +614,8 @@ func TestAsyncBrokerPassthroughStampsAndClassifies(t *testing.T) {
 	cancel1()
 	require.Eventually(t, func() bool {
 		reqCtx3, _ := asyncReqCtx(t, `{"model":"test-model"}`, map[string]string{
-			defaultModeHeader:   "passthrough",
-			defaultTenantHeader: "limited-team",
+			defaultModeHeader:         "passthrough",
+			reqcommon.TenantHeaderKey: "limited-team",
 		})
 		ctx3, cancel3 := context.WithCancel(t.Context())
 		defer cancel3()
@@ -626,8 +627,8 @@ func TestAsyncBrokerPassthroughStampsAndClassifies(t *testing.T) {
 
 	// An unlimited tenant is always reserved and never touches counters.
 	reqCtx4, _ := asyncReqCtx(t, `{"model":"test-model"}`, map[string]string{
-		defaultModeHeader:   "passthrough",
-		defaultTenantHeader: "team-free",
+		defaultModeHeader:         "passthrough",
+		reqcommon.TenantHeaderKey: "team-free",
 	})
 	require.NoError(t, step.Execute(t.Context(), reqCtx4))
 	assert.Equal(t, "interactive-reserved", reqCtx4.OriginalHeaders.Get("x-llm-d-inference-objective"))
@@ -642,7 +643,7 @@ func TestAsyncBrokerRoutes(t *testing.T) {
 	do := func(method, path, tenant string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, nil)
 		if tenant != "" {
-			req.Header.Set(defaultTenantHeader, tenant)
+			req.Header.Set(reqcommon.TenantHeaderKey, tenant)
 		}
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
@@ -744,7 +745,7 @@ func TestAsyncBrokerFetchGraceConfig(t *testing.T) {
 		r := chi.NewRouter()
 		step.RegisterRoutes(r)
 		req := httptest.NewRequest(http.MethodGet, "/v1/requests/"+id, nil)
-		req.Header.Set(defaultTenantHeader, "team-a")
+		req.Header.Set(reqcommon.TenantHeaderKey, "team-a")
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
@@ -826,7 +827,7 @@ func TestAsyncBrokerUndeliveredErrorResultIsRetained(t *testing.T) {
 	t.Run("held wait", func(t *testing.T) {
 		step, rdb := newAsyncTestStep(t, nil)
 		reqCtx, _ := asyncReqCtx(t, `{"model":"test-model"}`,
-			map[string]string{defaultModeHeader: "wait", defaultTenantHeader: "team-a"})
+			map[string]string{defaultModeHeader: "wait", reqcommon.TenantHeaderKey: "team-a"})
 		w := newFailingWriter()
 		reqCtx.ResponseWriter = w
 		key := seed(t, rdb, "req-test-1")
@@ -843,7 +844,7 @@ func TestAsyncBrokerUndeliveredErrorResultIsRetained(t *testing.T) {
 		r := chi.NewRouter()
 		step.RegisterRoutes(r)
 		req := httptest.NewRequest(http.MethodGet, "/v1/requests/eager-id", nil)
-		req.Header.Set(defaultTenantHeader, "team-a")
+		req.Header.Set(reqcommon.TenantHeaderKey, "team-a")
 
 		w := newFailingWriter()
 		r.ServeHTTP(w, req)
@@ -857,7 +858,7 @@ func TestAsyncBrokerUndeliveredErrorResultIsRetained(t *testing.T) {
 		r := chi.NewRouter()
 		step.RegisterRoutes(r)
 		req := httptest.NewRequest(http.MethodGet, "/v1/requests/grace-id", nil)
-		req.Header.Set(defaultTenantHeader, "team-a")
+		req.Header.Set(reqcommon.TenantHeaderKey, "team-a")
 
 		w := newFailingWriter()
 		r.ServeHTTP(w, req)
@@ -900,7 +901,7 @@ func TestAsyncBrokerRetryReattaches(t *testing.T) {
 	post := func(t *testing.T, step *Step, mode, id string) *httptest.ResponseRecorder {
 		t.Helper()
 		reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`, map[string]string{
-			defaultModeHeader: mode, defaultTenantHeader: "team-a", "X-Request-Id": id,
+			defaultModeHeader: mode, reqcommon.TenantHeaderKey: "team-a", "X-Request-Id": id,
 		})
 		reqCtx.RequestID = id
 		err := step.Execute(t.Context(), reqCtx)
@@ -955,7 +956,7 @@ func TestAsyncBrokerRetryReattaches(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, rdb.LPush(t.Context(), resultKey("team-a", "job-r5"), string(res)).Err())
 		reqCtx, rec := asyncReqCtx(t, `{"model":"test-model"}`, map[string]string{
-			defaultModeHeader: "wait", defaultTenantHeader: "team-a", "X-Request-Id": "job-r5",
+			defaultModeHeader: "wait", reqcommon.TenantHeaderKey: "team-a", "X-Request-Id": "job-r5",
 		})
 		reqCtx.RequestID = "job-r5"
 		err = step.Execute(t.Context(), reqCtx)
