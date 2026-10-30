@@ -342,6 +342,56 @@ func TestCachedTokens_FlowFromPrefillToDecode(t *testing.T) {
 	}
 }
 
+// The cache ledger's count is what the tenant is billed on, so it replaces both
+// the prefill worker's count and the decode worker's.
+func TestCachedTokens_LedgerCountReachesTheClient(t *testing.T) {
+	const (
+		ledgerCachedTokens  = 64
+		prefillCachedTokens = 11
+		decodeCachedTokens  = 500
+	)
+
+	for name, stream := range map[string]bool{"non-streaming": false, "streaming": true} {
+		t.Run(name, func(t *testing.T) {
+			gwServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get(reqcommon.EPPProfileHeaderKey) == gateway.PhasePrefill {
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"kv_transfer_params": map[string]any{"block_id": "block-1"},
+						"usage":              usageBlock(prefillCachedTokens),
+					})
+					return
+				}
+				if stream {
+					writeUsageSSE(t, w, usageBlock(decodeCachedTokens))
+					return
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"usage": usageBlock(decodeCachedTokens)})
+			}))
+			defer gwServer.Close()
+
+			gwClient := gateway.New(config.GatewayConfig{Address: gwServer.URL})
+			reqCtx := cachedTokensRequestContext(stream)
+			ledger := ledgerCachedTokens
+			reqCtx.LedgerCachedTokens = &ledger
+
+			prefillStep, _ := NewPrefillStep(gwClient, map[string]any{ParamKVConnector: kv.NIXL})
+			if err := prefillStep.Execute(context.Background(), reqCtx); err != nil {
+				t.Fatalf("prefill failed: %v", err)
+			}
+			decodeStep, _ := NewDecodeStep(gwClient, map[string]any{ParamKVConnector: kv.NIXL})
+			recorder := httptest.NewRecorder()
+			reqCtx.ResponseWriter = recorder
+			if err := decodeStep.Execute(context.Background(), reqCtx); err != nil {
+				t.Fatalf("decode failed: %v", err)
+			}
+
+			if got := clientCachedTokens(t, recorder.Body.String()); got != ledgerCachedTokens {
+				t.Errorf("client cached_tokens = %d, want the ledger's %d", got, ledgerCachedTokens)
+			}
+		})
+	}
+}
+
 // With nothing measured on the prefill side, the decode worker's own count is
 // the only one there is, and the client must see it rather than a fabricated
 // zero. A prefill response carrying no usage block at all is what the tokens-in

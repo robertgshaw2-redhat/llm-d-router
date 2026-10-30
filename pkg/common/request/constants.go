@@ -36,6 +36,9 @@ const (
 	// EPP's request, for topology-affinity-filter and topology-affinity-scorer
 	// running in coordinator deployments.
 	PeerTopologyHeaderKey = "x-llm-d-peer-topology"
+	// TenantHeaderKey carries the tenant a request is accounted to. The
+	// gateway sets it after authenticating the client.
+	TenantHeaderKey = "x-llm-d-tenant"
 
 	// DefaultFairnessID is the default fairness ID used when no ID is provided in the request.
 	// This ensures that requests without explicit fairness identifiers are still grouped and managed by the Flow Control
@@ -78,6 +81,7 @@ const (
 	FieldAddGenerationPrompt  = "add_generation_prompt"
 	FieldPreviousResponseID   = "previous_response_id"
 	FieldConversation         = "conversation"
+	FieldCacheSalt            = "cache_salt"
 	FieldBackground           = "background"
 	FieldInput                = "input"
 	FieldInstructions         = "instructions"

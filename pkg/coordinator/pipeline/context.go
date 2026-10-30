@@ -200,6 +200,12 @@ type RequestContext struct {
 	// consumer that treats nil as zero reports no cache hits for a request that
 	// had them.
 	PrefillCachedTokens *int
+	// LedgerCachedTokens is the prompt-cache hit count the cache ledger
+	// reported: the prompt tokens the tenant sent within the retention window,
+	// whether or not an engine still held them. Set by the cache-ledger step;
+	// when set, the decode step reports it in place of PrefillCachedTokens.
+	// nil means no ledger answer applies to this request.
+	LedgerCachedTokens *int
 	// PeerTopology carries the prefill endpoint's encoded topology from the
 	// prefill response to the decode request, for topology-affinity-filter
 	// and topology-affinity-scorer running in the decode EPP's profile.

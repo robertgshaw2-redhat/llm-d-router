@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 	"github.com/llm-d/llm-d-router/pkg/coordinator/steps"
 	"github.com/llm-d/llm-d-router/pkg/epp/metadata"
 )
@@ -47,8 +48,6 @@ const (
 	// defaultModeHeader selects the serving mode when mode_header is not
 	// configured.
 	defaultModeHeader = "x-llm-d-async-mode"
-	// defaultTenantHeader resolves the tenant when tenant_header is not configured.
-	defaultTenantHeader = "x-llm-d-tenant"
 	// defaultTimeoutHeader carries a per-request deadline when timeout_header is
 	// not configured.
 	defaultTimeoutHeader = "x-llm-d-request-timeout-seconds"
@@ -173,7 +172,7 @@ func (c *asyncBrokerConfig) applyDefaults() {
 		c.ModeHeader = defaultModeHeader
 	}
 	if c.TenantHeader == "" {
-		c.TenantHeader = defaultTenantHeader
+		c.TenantHeader = reqcommon.TenantHeaderKey
 	}
 	if c.TimeoutHeader == "" {
 		c.TimeoutHeader = defaultTimeoutHeader

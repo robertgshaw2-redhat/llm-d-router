@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package llmd.cacheledger.v1;
+
+option go_package = "github.com/llm-d/llm-d-router/pkg/cacheledger/api/gen";
+
+// CacheLedger records which prompt prefixes each tenant sent within a
+// retention window. A prompt-cache hit can then be billed against that
+// retention promise instead of against what an engine happened to keep.
+service CacheLedger {
+  // MatchAndTouch returns how many leading block hashes the tenant sent within
+  // their TTL, then records every hash with a fresh TTL. The match reflects
+  // the state before this call's writes, and the two are atomic per tenant.
+  rpc MatchAndTouch(MatchAndTouchRequest) returns (MatchAndTouchResponse);
+}
+
+message MatchAndTouchRequest {
+  // Tenant scopes the hashes. Hashes of one tenant never match another's.
+  string tenant = 1;
+  // Chained prefix block hashes in prompt order: each hash covers its block
+  // and every block before it.
+  repeated fixed64 block_hashes = 2;
+  // Retention for the recorded hashes. Zero selects the server default; the
+  // server clamps larger values to its maximum.
+  uint32 ttl_seconds = 3;
+}
+
+message MatchAndTouchResponse {
+  uint32 matched_blocks = 1;
+}
